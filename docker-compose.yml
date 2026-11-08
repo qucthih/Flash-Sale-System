@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Service
+  postgres:
+    image: postgres:16-alpine
+    container_name: flash_sale_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: flash_sale_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flash_sale_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - flash_sale_network
+
+  # 2. Redis Cache & Message Broker (RAM-based in-memory optimization)
+  redis:
+    image: redis:7-alpine
+    container_name: flash_sale_redis
+    restart: always
+    # Chạy thuần In-Memory (tắt persistence snapshot để tối đa Throughput cho Flash Sale)
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - flash_sale_network
+
+  # 3. Main Express API Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flash_sale_api
+    restart: always
+    command: sh -c "npx prisma db push && node dist/app.js"
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres:postgrespassword@postgres:5432/flash_sale_db?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      START_WORKER: "false" # Chạy worker tách biệt trên container riêng
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - flash_sale_network
+
+  # 4. BullMQ Background Worker (Decoupled Consumer)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flash_sale_worker
+    restart: always
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres:postgrespassword@postgres:5432/flash_sale_db?schema=public"
+      REDIS_URL: "redis://redis:6379"
+      WORKER_CONCURRENCY: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - flash_sale_network
+
+  # 5. Bull-Board Queue Dashboard (Port 3001)
+  bull-board:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flash_sale_bull_board
+    restart: always
+    command: ["node", "dist/bull-board.js"]
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      BULL_BOARD_PORT: 3001
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - flash_sale_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  flash_sale_network:
+    driver: bridge

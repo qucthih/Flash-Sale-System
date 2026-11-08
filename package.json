@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/app.js",
     "worker": "tsx src/worker.ts",
+    "bull-board": "tsx src/bull-board.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
@@ -15,12 +16,15 @@
     "test:benchmark": "tsx scripts/benchmark-all.ts",
     "test:stress": "tsx scripts/stress-test.ts",
     "test:spike": "tsx load-tests/spike-1000.ts",
+    "test:compare": "tsx scripts/run-loadtest-comparison.ts",
     "verify:db": "tsx load-tests/verify-db.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@bull-board/api": "^9.11.0",
+    "@bull-board/express": "^9.11.0",
     "@prisma/client": "^5.22.0",
     "bullmq": "^6.7.2",
     "cors": "^2.8.5",
