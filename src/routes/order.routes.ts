@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { orderController } from '../controllers/order.controller.js';
+import { idempotencyMiddleware } from '../middlewares/idempotency.middleware.js';
 
 const router = Router();
 
@@ -19,7 +20,7 @@ router.post('/atomic-checkout', (req, res, next) => {
 });
 
 // 4. Redis Lua Script Atomic Checkout + BullMQ Asynchronous Processing
-router.post('/atomic-redis-checkout', (req, res, next) => {
+router.post('/atomic-redis-checkout', idempotencyMiddleware, (req, res, next) => {
   orderController.atomicRedisCheckout(req, res, next);
 });
 

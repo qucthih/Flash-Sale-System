@@ -8,6 +8,7 @@ export class OrderController {
    */
   private extractPayload(req: Request) {
     const { productId, quantity = 1, userId } = req.body;
+    const idempotencyKey = (req.headers['x-idempotency-key'] as string) || undefined;
 
     if (!productId || typeof productId !== 'string') {
       throw { statusCode: 400, message: 'productId is required and must be a string' };
@@ -18,7 +19,12 @@ export class OrderController {
       throw { statusCode: 400, message: 'quantity must be a positive integer' };
     }
 
-    return { productId, quantity: parsedQuantity, userId: userId ? String(userId) : undefined };
+    return {
+      productId,
+      quantity: parsedQuantity,
+      userId: userId ? String(userId) : undefined,
+      idempotencyKey,
+    };
   }
 
   /**

@@ -310,18 +310,45 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 Flash Sale Server is running on http://localhost:${PORT}`);
-    console.log(`🎯 Test endpoint: POST http://localhost:${PORT}/api/v1/orders/atomic-redis-checkout`);
-  });
+const DEFAULT_PRODUCT_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
-  // Tự động khởi chạy Order Worker nếu không chạy worker riêng biệt bằng process khác
+async function bootstrap() {
+  try {
+    // 1. Tự động kiểm tra và khởi tạo sản phẩm mẫu nếu DB chưa có (Auto-seed)
+    const product = await prisma.product.upsert({
+      where: { id: DEFAULT_PRODUCT_ID },
+      update: {},
+      create: {
+        id: DEFAULT_PRODUCT_ID,
+        name: 'iPhone 15 Pro Max 256GB (Flash Sale Edition)',
+        stock: 10,
+        price: 1199.99,
+      },
+    });
+    console.log(`📦 [Database] Sản phẩm Flash Sale sẵn sàng: [${product.id}], Tồn kho: ${product.stock}`);
+
+    // 2. Tự động preload tồn kho lên Redis RAM
+    const { flashSaleInventoryService } = await import('./services/flash-sale-inventory.service.js');
+    await flashSaleInventoryService.preloadStock(product.id, product.stock);
+    console.log(`⚡ [Redis] Đã nạp thành công tồn kho lên RAM: flash_sale:stock:${product.id} = ${product.stock}`);
+  } catch (err: any) {
+    console.warn(`⚠️ [Bootstrap] Chưa thể hoàn tất auto-seed / preload tồn kho: ${err.message}`);
+  }
+
+  // 3. Tự động khởi chạy Order Worker nếu không chạy worker riêng biệt bằng process khác
   if (process.env.START_WORKER !== 'false') {
     import('./workers/order.worker.js')
       .then(() => console.log('⚡ [BullMQ] Embedded Order Worker đã khởi chạy.'))
       .catch((err) => console.warn('⚠️ [BullMQ] Không thể khởi chạy embedded worker:', err.message));
   }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Flash Sale Server is running on http://localhost:${PORT}`);
+    console.log(`🎯 Test endpoint: POST http://localhost:${PORT}/api/v1/orders/atomic-redis-checkout`);
+    bootstrap();
+  });
 }
 
 export default app;

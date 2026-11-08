@@ -7,6 +7,7 @@ export interface CheckoutDTO {
   productId: string;
   quantity: number;
   userId?: string;
+  idempotencyKey?: string;
 }
 
 export class OrderService {
@@ -211,7 +212,7 @@ export class OrderService {
    * - Khi trừ kho thành công, đẩy Job vào Message Queue 'order-processing-queue'.
    * - Trả về ngay HTTP 202 Accepted cho client kèm orderId.
    */
-  async atomicRedisCheckout({ productId, quantity, userId }: CheckoutDTO) {
+  async atomicRedisCheckout({ productId, quantity, userId, idempotencyKey }: CheckoutDTO) {
     // 1. Thực thi Lua Script trừ tồn kho trên Redis
     const deductResult = await flashSaleInventoryService.deductStock(productId, quantity);
 
@@ -223,7 +224,7 @@ export class OrderService {
     }
 
     // 2. Trừ tồn kho Redis thành công -> Tạo Job payload
-    const orderId = randomUUID();
+    const orderId = idempotencyKey || randomUUID();
     const resolvedUserId = userId || `user_${randomUUID().slice(0, 8)}`;
     const timestamp = Date.now();
 
