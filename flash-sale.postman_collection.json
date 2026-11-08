@@ -1,0 +1,115 @@
+{
+  "info": {
+    "name": "Flash Sale Concurrency Lab",
+    "_postman_id": "flash-sale-collection-v1",
+    "description": "Bộ sưu tập API kiểm thử Concurrency & Race Condition cho hệ thống Flash Sale.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Naive Checkout (Race Condition)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",\n  \"quantity\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders/naive-checkout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders", "naive-checkout"]
+        },
+        "description": "Endpoint Naive Checkout sử dụng Read-Modify-Write không an toàn, gây lỗi bán lố khi có nhiều request đồng thời."
+      }
+    },
+    {
+      "name": "2. Pessimistic Lock Checkout (SELECT FOR UPDATE)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",\n  \"quantity\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders/pessimistic-checkout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders", "pessimistic-checkout"]
+        },
+        "description": "Sử dụng khóa dòng cấp cơ sở dữ liệu. An toàn tuyệt đối nhưng throughput giảm do các luồng phải đợi nhau."
+      }
+    },
+    {
+      "name": "3. Atomic Decrement Checkout (Conditional Update)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",\n  \"quantity\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders/atomic-checkout",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders", "atomic-checkout"]
+        },
+        "description": "Giải pháp khuyến nghị cao nhất trong sản xuất: UPDATE WHERE stock >= quantity. Non-blocking và tốc độ cao."
+      }
+    },
+    {
+      "name": "4. Reset Stock về 10",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",\n  \"stock\": 10\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders/reset-stock",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders", "reset-stock"]
+        },
+        "description": "Helper endpoint để xóa các đơn hàng cũ và đưa tồn kho về 10 để chuẩn bị cho lượt test kế tiếp."
+      }
+    },
+    {
+      "name": "5. Xem thông tin sản phẩm & Tồn kho",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders/products/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "orders", "products", "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"]
+        }
+      }
+    },
+    {
+      "name": "6. Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ]
+}
+

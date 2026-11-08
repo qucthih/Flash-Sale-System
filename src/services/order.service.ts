@@ -1,8 +1,12 @@
+import { randomUUID } from 'crypto';
 import { prisma } from '../config/db.js';
+import { flashSaleInventoryService } from './flash-sale-inventory.service.js';
+import { orderQueue, orderDlqQueue, OrderJobPayload } from '../queues/order.queue.js';
 
 export interface CheckoutDTO {
   productId: string;
   quantity: number;
+  userId?: string;
 }
 
 export class OrderService {
@@ -199,6 +203,99 @@ export class OrderService {
         },
       },
     });
+  }
+
+  /**
+   * 4. ATOMIC REDIS CHECKOUT VỚI MESSAGE QUEUE (BULLMQ):
+   * - Trừ tồn kho nguyên tử in-memory trên Redis qua Lua Script.
+   * - Khi trừ kho thành công, đẩy Job vào Message Queue 'order-processing-queue'.
+   * - Trả về ngay HTTP 202 Accepted cho client kèm orderId.
+   */
+  async atomicRedisCheckout({ productId, quantity, userId }: CheckoutDTO) {
+    // 1. Thực thi Lua Script trừ tồn kho trên Redis
+    const deductResult = await flashSaleInventoryService.deductStock(productId, quantity);
+
+    if (deductResult === 0) {
+      const error: any = new Error('Out of stock or product not found on Redis');
+      error.statusCode = 400;
+      error.reason = 'OUT_OF_STOCK';
+      throw error;
+    }
+
+    // 2. Trừ tồn kho Redis thành công -> Tạo Job payload
+    const orderId = randomUUID();
+    const resolvedUserId = userId || `user_${randomUUID().slice(0, 8)}`;
+    const timestamp = Date.now();
+
+    const jobPayload: OrderJobPayload = {
+      orderId,
+      productId,
+      userId: resolvedUserId,
+      quantity,
+      timestamp,
+    };
+
+    // 3. Đẩy Job vào BullMQ 'order-processing-queue'
+    await orderQueue.add('process-order', jobPayload, {
+      jobId: orderId, // Đảm bảo Idempotency: không tạo 2 job trùng id
+    });
+
+    return {
+      orderId,
+      productId,
+      userId: resolvedUserId,
+      quantity,
+      status: 'ACCEPTED',
+      timestamp,
+    };
+  }
+
+  /**
+   * Helper: Polling trạng thái đơn hàng (Order Status Polling Endpoint)
+   * Giúp Client kiểm tra đơn hàng đã được worker lưu vào DB chưa
+   */
+  async getOrderStatus(orderId: string) {
+    // 1. Kiểm tra trực tiếp trong PostgreSQL
+    const dbOrder = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { product: true },
+    });
+
+    if (dbOrder) {
+      return {
+        orderId,
+        status: dbOrder.status, // SUCCESS
+        isPersisted: true,
+        order: dbOrder,
+      };
+    }
+
+    // 2. Nếu chưa có trong DB, kiểm tra trong BullMQ Queue
+    const job = await orderQueue.getJob(orderId);
+    if (job) {
+      const state = await job.getState();
+      return {
+        orderId,
+        status: state === 'active' ? 'PROCESSING' : 'QUEUED',
+        isPersisted: false,
+        attemptsMade: job.attemptsMade,
+        queueState: state,
+      };
+    }
+
+    // 3. Kiểm tra trong Dead Letter Queue (DLQ)
+    const dlqJob = await orderDlqQueue.getJob(`dlq-${orderId}`);
+    if (dlqJob) {
+      return {
+        orderId,
+        status: 'FAILED',
+        isPersisted: false,
+        failedReason: dlqJob.data.failedReason,
+        failedAt: dlqJob.data.failedAt,
+      };
+    }
+
+    return null;
   }
 }
 

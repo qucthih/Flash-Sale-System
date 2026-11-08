@@ -195,6 +195,8 @@ app.get('/', async (_req: Request, res: Response) => {
       <div class="btn-group">
         <button class="btn-danger" onclick="triggerTest('naive-checkout')">🔥 Bắn 30 Request (Naive - Gây Race Condition)</button>
         <button class="btn-primary" onclick="triggerTest('atomic-checkout')">🛡️ Bắn 30 Request (Atomic Decrement)</button>
+        <button style="background: #e11d48; color: white;" onclick="triggerTest('atomic-redis-checkout')">⚡ Bắn 30 Request (Redis Lua + BullMQ Queue)</button>
+        <button class="btn-outline" onclick="preloadRedis()">💾 Nạp kho lên Redis</button>
         <button class="btn-outline" onclick="resetStock()">🔄 Reset kho về 10</button>
         <button class="btn-outline" onclick="location.reload()">🔃 Làm mới trang</button>
       </div>
@@ -240,12 +242,12 @@ app.get('/', async (_req: Request, res: Response) => {
       const results = await Promise.all(promises);
       const duration = Date.now() - startTime;
 
-      const success = results.filter(r => r.status === 201).length;
+      const success = results.filter(r => r.status === 201 || r.status === 200 || r.status === 202).length;
       const failed = results.filter(r => r.status === 400).length;
 
       let msg = '⏱️ Hoàn thành trong: ' + duration + 'ms\\n';
-      msg += '✅ Đơn hàng thành công (HTTP 201): ' + success + '\\n';
-      msg += '❌ Bị từ chối hết hàng (HTTP 400):  ' + failed + '\\n\\n';
+      msg += '✅ Đơn hàng thành công / chấp nhận (HTTP 200/201/202): ' + success + '\\n';
+      msg += '❌ Bị từ chối hết hàng (HTTP 400):                    ' + failed + '\\n\\n';
 
       if (strategy === 'naive-checkout' && success > 10) {
         msg += '🚨 PHÁT HIỆN LỖI RACE CONDITION (OVER-SELLING)!\\n';
@@ -257,6 +259,18 @@ app.get('/', async (_req: Request, res: Response) => {
       log(msg);
       // Cập nhật lại số liệu
       setTimeout(() => location.reload(), 1500);
+    }
+
+    async function preloadRedis() {
+      if (!productId) return;
+      log('⏳ Đang nạp số lượng tồn kho lên Redis RAM...');
+      const res = await fetch('/api/v1/orders/redis-preload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, stock: 10 })
+      });
+      const data = await res.json();
+      log(data.message || JSON.stringify(data));
     }
 
     async function resetStock() {
@@ -299,8 +313,15 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`🚀 Flash Sale Server is running on http://localhost:${PORT}`);
-    console.log(`🎯 Test endpoint: POST http://localhost:${PORT}/api/v1/orders/naive-checkout`);
+    console.log(`🎯 Test endpoint: POST http://localhost:${PORT}/api/v1/orders/atomic-redis-checkout`);
   });
+
+  // Tự động khởi chạy Order Worker nếu không chạy worker riêng biệt bằng process khác
+  if (process.env.START_WORKER !== 'false') {
+    import('./workers/order.worker.js')
+      .then(() => console.log('⚡ [BullMQ] Embedded Order Worker đã khởi chạy.'))
+      .catch((err) => console.warn('⚠️ [BullMQ] Không thể khởi chạy embedded worker:', err.message));
+  }
 }
 
 export default app;
