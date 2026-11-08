@@ -12,7 +12,9 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "test:race-condition": "tsx scripts/test-race-condition.ts",
     "test:benchmark": "tsx scripts/benchmark-all.ts",
-    "test:stress": "tsx scripts/stress-test.ts"
+    "test:stress": "tsx scripts/stress-test.ts",
+    "test:spike": "tsx load-tests/spike-1000.ts",
+    "verify:db": "tsx load-tests/verify-db.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
